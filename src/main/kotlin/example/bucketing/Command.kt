@@ -2,29 +2,77 @@ package example.bucketing
 
 import io.vertx.core.Future
 import io.vertx.core.Promise
-import io.vertx.core.Vertx
 
-interface Operation<AGGREGATE, RESULT> {
-    fun run(aggregate: AGGREGATE): RESULT
+interface Operation<AGGREGATE_ID, AGGREGATE : Aggregate<AGGREGATE_ID>, REPOSITORY : Repository<AGGREGATE, AGGREGATE_ID>, RESULT> {
+    fun run(repository: REPOSITORY): Future<RESULT>
 }
 
-interface Command<AGGREGATE, RESULT> : Operation<AGGREGATE, RESULT>
+interface Command<AGGREGATE_ID, AGGREGATE : Aggregate<AGGREGATE_ID>, REPOSITORY : Repository<AGGREGATE, AGGREGATE_ID>, RESULT> :
+    Operation<AGGREGATE_ID, AGGREGATE, REPOSITORY, RESULT>
 
-interface Query<AGGREGATE, RESULT> : Operation<AGGREGATE, RESULT>
+interface Query<AGGREGATE_ID, AGGREGATE : Aggregate<AGGREGATE_ID>, REPOSITORY : Repository<AGGREGATE, AGGREGATE_ID>, RESULT> :
+    Operation<AGGREGATE_ID, AGGREGATE, REPOSITORY, RESULT>
 
 interface CommandExecutor {
-    fun <AGGREGATE, RESULT> exec(aggregate: AGGREGATE, operation: Operation<AGGREGATE, RESULT>): Future<RESULT>
+    fun <AGGREGATE_ID, AGGREGATE : Aggregate<AGGREGATE_ID>, REPOSITORY : Repository<AGGREGATE, AGGREGATE_ID>, RESULT> exec(
+        repository: REPOSITORY,
+        command: Command<AGGREGATE_ID, AGGREGATE, REPOSITORY, RESULT>
+    ): Future<RESULT>
+
+    fun <AGGREGATE_ID, AGGREGATE : Aggregate<AGGREGATE_ID>, REPOSITORY : Repository<AGGREGATE, AGGREGATE_ID>, RESULT> exec(
+        repository: REPOSITORY,
+        query: Query<AGGREGATE_ID, AGGREGATE, REPOSITORY, RESULT>
+    ): Future<RESULT>
 }
 
-class SimpleCommandExecutor(private val vertx: Vertx) : CommandExecutor {
-    override fun <AGGREGATE, RESULT> exec(
-        aggregate: AGGREGATE,
-        operation: Operation<AGGREGATE, RESULT>
+class SimpleCommandExecutor : CommandExecutor {
+    override fun <AGGREGATE_ID, AGGREGATE : Aggregate<AGGREGATE_ID>, REPOSITORY : Repository<AGGREGATE, AGGREGATE_ID>, RESULT> exec(
+        repository: REPOSITORY,
+        command: Command<AGGREGATE_ID, AGGREGATE, REPOSITORY, RESULT>
     ): Future<RESULT> {
-        val promise = Promise.promise<RESULT>()
-        vertx.setTimer(1000) {
-            promise.complete(operation.run(aggregate))
+        return command.run(repository)
+    }
+
+    override fun <AGGREGATE_ID, AGGREGATE : Aggregate<AGGREGATE_ID>, REPOSITORY : Repository<AGGREGATE, AGGREGATE_ID>, RESULT> exec(
+        repository: REPOSITORY,
+        query: Query<AGGREGATE_ID, AGGREGATE, REPOSITORY, RESULT>
+    ): Future<RESULT> {
+        return query.run(repository)
+    }
+}
+
+class BucketingCommandExecutor : CommandExecutor {
+    private val bucket =
+        mutableMapOf<Query<Any, Aggregate<Any>, Repository<Aggregate<Any>, Any>, Any>, MutableSet<Promise<Any>>>()
+
+    override fun <AGGREGATE_ID, AGGREGATE : Aggregate<AGGREGATE_ID>, REPOSITORY : Repository<AGGREGATE, AGGREGATE_ID>, RESULT> exec(
+        repository: REPOSITORY,
+        command: Command<AGGREGATE_ID, AGGREGATE, REPOSITORY, RESULT>
+    ): Future<RESULT> {
+        return command.run(repository)
+    }
+
+    override fun <AGGREGATE_ID, AGGREGATE : Aggregate<AGGREGATE_ID>, REPOSITORY : Repository<AGGREGATE, AGGREGATE_ID>, RESULT> exec(
+        repository: REPOSITORY,
+        query: Query<AGGREGATE_ID, AGGREGATE, REPOSITORY, RESULT>
+    ): Future<RESULT> {
+        val result = Promise.promise<RESULT>()
+        return if (bucket.containsKey(query)) {
+            bucket[query]?.add(result as Promise<Any>)
+            result.future()
+        } else {
+            val results = mutableSetOf(result as Promise<Any>)
+            bucket[query as Query<Any, Aggregate<Any>, Repository<Aggregate<Any>, Any>, Any>] = results
+            query.run(repository)
+                .onSuccess { res ->
+                    bucket.remove(query as Query<Any, Aggregate<Any>, Repository<Aggregate<Any>, Any>, Any>)
+                    results.forEach { it.complete(res) }
+                }
+                .onFailure { res ->
+                    bucket.remove(query as Query<Any, Aggregate<Any>, Repository<Aggregate<Any>, Any>, Any>)
+                    results.forEach { it.fail(res) }
+                }
+            result.future() as Future<RESULT>
         }
-        return promise.future()
     }
 }

@@ -9,23 +9,14 @@ import io.vertx.ext.web.Router
 import io.vertx.ext.web.RoutingContext
 import io.vertx.ext.web.handler.BodyHandler
 
-data class HttpConfig(val commandExecutor: CommandExecutor, val port: Int, val objectMapper: ObjectMapper)
-
-fun buildHttpVerticle(
-    commandExecutor: CommandExecutor,
-    objectMapper: ObjectMapper
-): HttpVerticle {
-    val httpConfig = HttpConfig(commandExecutor, 8080, objectMapper)
-    return HttpVerticle(
-        config = httpConfig
-    )
-}
-
 class HttpVerticle(
-    private val config: HttpConfig
+    commandExecutor: CommandExecutor,
+    private val objectMapper: ObjectMapper,
+    bookRepository: BookRepository,
+    private val port: Int
 ) : AbstractVerticle() {
 
-    private val bookshelfService = BookshelfService(this.config.commandExecutor)
+    private val bookService = BookService(commandExecutor, bookRepository)
 
     override fun start(startPromise: Promise<Void>) {
 
@@ -41,41 +32,41 @@ class HttpVerticle(
 
         router.route().handler(BodyHandler.create())
 
-        router.route(HttpMethod.POST, "/bookshelf").handler { addBook(it) }
-        router.route(HttpMethod.DELETE, "/bookshelf/:id").handler { removeBook(it) }
-        router.route(HttpMethod.GET, "/bookshelf/:id").handler { getBook(it) }
-        router.route(HttpMethod.GET, "/bookshelf/").handler { getAllBooks(it) }
+        router.route(HttpMethod.POST, "/book").handler { addBook(it) }
+        router.route(HttpMethod.DELETE, "/book/:id").handler { removeBook(it) }
+        router.route(HttpMethod.GET, "/book/:id").handler { getBook(it) }
+        router.route(HttpMethod.GET, "/book/").handler { getAllBooks(it) }
         val serverStart = Promise.promise<Void>()
         server
             .requestHandler(router)
-            .listen(config.port)
+            .listen(port)
         serverStart.complete()
         return serverStart.future()
     }
 
     private fun getBook(context: RoutingContext) {
         val bookId = BookId(context.pathParam("id").toInt())
-        this.bookshelfService.getBook(bookId)
+        this.bookService.getBook(bookId)
             .onSuccess { if (it == null) sendMissingResponse(context) else sendResponse(context, it) }
             .onFailure { sendFailedResponse(context, it) }
     }
 
     private fun getAllBooks(context: RoutingContext) {
-        this.bookshelfService.getAllBooks()
+        this.bookService.getAllBooks()
             .onSuccess { sendResponse(context, it) }
             .onFailure { sendFailedResponse(context, it) }
     }
 
     private fun addBook(context: RoutingContext) {
-        val book = this.config.objectMapper.readValue(context.body.toString(), Book::class.java)
-        this.bookshelfService.addBook(book)
+        val newBook = objectMapper.readValue(context.body.toString(), NewBook::class.java)
+        this.bookService.addBook(newBook)
             .onSuccess { sendResponse(context, it) }
             .onFailure { sendFailedResponse(context, it) }
     }
 
     private fun removeBook(context: RoutingContext) {
         val bookId = BookId(context.pathParam("id").toInt())
-        this.bookshelfService.removeBook(bookId)
+        this.bookService.removeBook(bookId)
             .onSuccess { sendResponse(context, it) }
             .onFailure { sendFailedResponse(context, it) }
     }
@@ -83,7 +74,7 @@ class HttpVerticle(
     private fun <R> sendResponse(routingContext: RoutingContext, it: R) {
         val response = routingContext.response()
         response.putHeader("content-type", "application/json")
-        response.end(this.config.objectMapper.writeValueAsString(it))
+        response.end(objectMapper.writeValueAsString(it))
     }
 
     private fun sendFailedResponse(routingContext: RoutingContext, cause: Throwable) {
