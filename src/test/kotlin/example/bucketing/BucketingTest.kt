@@ -20,16 +20,25 @@ class BucketingTest {
 
     @Test
     fun verifyBasicFunctionality(vertx: Vertx, testContext: VertxTestContext) {
-        val newBook = NewBook("TEST")
+        val newBook = NewBookDto("TEST")
+        val bookFactory = InMemoryBookFactory()
 
         val createHttpClient = vertx.createHttpClient()
-        vertx.deployVerticle(HttpVerticle(SimpleCommandExecutor(), objectMapper, InMemoryBookRepository(vertx), 8080))
+        vertx.deployVerticle(
+            HttpVerticle(
+                SimpleCommandExecutor(),
+                objectMapper,
+                InMemoryBookRepository(vertx),
+                bookFactory,
+                8080
+            )
+        )
             .compose { addBook(createHttpClient, newBook) }
             .compose { getBook(createHttpClient, it) }
             .compose { response ->
                 response.body()
-                    .map { objectMapper.readValue(it.toString(), Book::class.java) }
-                    .map { assert(it.text == newBook.text) }
+                    .map { objectMapper.readValue(it.toString(), BookDto::class.java) }
+                    .map { assert(it.text == newBook.getText()) }
             }
             .onSuccess { testContext.completeNow() }
             .onFailure { testContext.failNow(it) }
@@ -39,7 +48,8 @@ class BucketingTest {
     fun runWithoutBucketing(vertx: Vertx, testContext: VertxTestContext) {
         val repository = InMemoryBookRepository(vertx)
         val createHttpClient = vertx.createHttpClient()
-        vertx.deployVerticle(HttpVerticle(SimpleCommandExecutor(), objectMapper, repository, 8080))
+        val bookFactory = InMemoryBookFactory()
+        vertx.deployVerticle(HttpVerticle(SimpleCommandExecutor(), objectMapper, repository, bookFactory, 8080))
             .compose { populateBookshelf(createHttpClient) }
             .compose { sendQueries(createHttpClient, 100, it) }
             .map { compositeFuture ->
@@ -58,7 +68,8 @@ class BucketingTest {
     fun runWithBucketing(vertx: Vertx, testContext: VertxTestContext) {
         val repository = InMemoryBookRepository(vertx)
         val createHttpClient = vertx.createHttpClient()
-        vertx.deployVerticle(HttpVerticle(BucketingCommandExecutor(), objectMapper, repository, 8080))
+        val bookFactory = InMemoryBookFactory()
+        vertx.deployVerticle(HttpVerticle(BucketingCommandExecutor(), objectMapper, repository, bookFactory, 8080))
             .compose { populateBookshelf(createHttpClient) }
             .compose { sendQueries(createHttpClient, 100, it) }
             .map { compositeFuture ->
@@ -75,9 +86,9 @@ class BucketingTest {
 
     private fun populateBookshelf(createHttpClient: HttpClient): Future<List<BookId>> {
 
-        val book1 = NewBook("Some book 1")
-        val book2 = NewBook("Some book 2")
-        val book3 = NewBook("Some book 3")
+        val book1 = NewBookDto("Some book 1")
+        val book2 = NewBookDto("Some book 2")
+        val book3 = NewBookDto("Some book 3")
 
 
         return CompositeFuture.all(

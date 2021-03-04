@@ -9,14 +9,25 @@ import io.vertx.ext.web.Router
 import io.vertx.ext.web.RoutingContext
 import io.vertx.ext.web.handler.BodyHandler
 
+data class NewBookDto(private val text: String) : NewBook {
+    override fun getText(): String {
+        return text
+    }
+}
+
+class BookDto(val id: BookId, val text: String) {
+    constructor(book: Book) : this(book.getId(), book.getText())
+}
+
 class HttpVerticle(
     commandExecutor: CommandExecutor,
     private val objectMapper: ObjectMapper,
     bookRepository: BookRepository,
+    bookFactory: BookFactory,
     private val port: Int
 ) : AbstractVerticle() {
 
-    private val bookService = BookService(commandExecutor, bookRepository)
+    private val bookService = BookService(commandExecutor, bookRepository, bookFactory)
 
     override fun start(startPromise: Promise<Void>) {
 
@@ -47,18 +58,20 @@ class HttpVerticle(
     private fun getBook(context: RoutingContext) {
         val bookId = BookId(context.pathParam("id").toInt())
         this.bookService.getBook(bookId)
+            .map { it?.let { BookDto(it) } }
             .onSuccess { if (it == null) sendMissingResponse(context) else sendResponse(context, it) }
             .onFailure { sendFailedResponse(context, it) }
     }
 
     private fun getAllBooks(context: RoutingContext) {
         this.bookService.getAllBooks()
+            .map { it.map { book -> BookDto(book) } }
             .onSuccess { sendResponse(context, it) }
             .onFailure { sendFailedResponse(context, it) }
     }
 
     private fun addBook(context: RoutingContext) {
-        val newBook = objectMapper.readValue(context.body.toString(), NewBook::class.java)
+        val newBook = objectMapper.readValue(context.body.toString(), NewBookDto::class.java)
         this.bookService.addBook(newBook)
             .onSuccess { sendResponse(context, it) }
             .onFailure { sendFailedResponse(context, it) }

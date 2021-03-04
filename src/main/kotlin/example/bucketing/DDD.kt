@@ -4,6 +4,8 @@ import io.vertx.core.Future
 
 interface Aggregate<AGGREGATE_ID>
 
+interface AggregateFactory<AGGREGATE : Aggregate<AGGREGATE_ID>, AGGREGATE_ID>
+
 interface Repository<AGGREGATE : Aggregate<AGGREGATE_ID>, AGGREGATE_ID> {
     fun get(): Future<Collection<AGGREGATE>>
     fun get(id: AGGREGATE_ID): Future<AGGREGATE?>

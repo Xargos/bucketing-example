@@ -4,6 +4,22 @@ import io.vertx.core.Future
 import io.vertx.core.Promise
 import io.vertx.core.Vertx
 
+data class InMemoryBook(private val id: BookId, private val text: String) : Book {
+    override fun getId(): BookId {
+        return id
+    }
+
+    override fun getText(): String {
+        return text
+    }
+}
+
+class InMemoryBookFactory : BookFactory {
+    override fun build(id: BookId, text: String): Book {
+        return InMemoryBook(id, text)
+    }
+}
+
 class InMemoryBookRepository(
     private val vertx: Vertx,
     private val delay: Long = 1000
@@ -37,7 +53,7 @@ class InMemoryBookRepository(
         callNo++
         val promise = Promise.promise<Void>()
         vertx.setTimer(delay) {
-            store[aggregate.bookId] = aggregate
+            store[aggregate.getId()] = aggregate
             promise.complete()
         }
         return promise.future()
