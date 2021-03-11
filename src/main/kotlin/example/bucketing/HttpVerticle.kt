@@ -57,14 +57,19 @@ class HttpVerticle(
 
     private fun getBook(context: RoutingContext) {
         val bookId = BookId(context.pathParam("id").toInt())
-        this.bookService.getBook(bookId)
-            .map { it?.let { BookDto(it) } }
+        this.bookService.getBook<BookDto?>(bookId)
+            .map {
+                it
+                    .map<BookDto?, BookDto?> { book -> book?.let { BookDto(book) } }
+                    .get(genericHandler())
+            }
             .onSuccess { if (it == null) sendMissingResponse(context) else sendResponse(context, it) }
             .onFailure { sendFailedResponse(context, it) }
     }
 
     private fun getAllBooks(context: RoutingContext) {
-        this.bookService.getAllBooks()
+        this.bookService.getAllBooks<Collection<Book>>()
+            .map { it.get(genericHandler()) }
             .map { it.map { book -> BookDto(book) } }
             .onSuccess { sendResponse(context, it) }
             .onFailure { sendFailedResponse(context, it) }
@@ -72,14 +77,16 @@ class HttpVerticle(
 
     private fun addBook(context: RoutingContext) {
         val newBook = objectMapper.readValue(context.body.toString(), NewBookDto::class.java)
-        this.bookService.addBook(newBook)
+        this.bookService.addBook<BookId>(newBook)
+            .map { it.get(genericHandler()) }
             .onSuccess { sendResponse(context, it) }
             .onFailure { sendFailedResponse(context, it) }
     }
 
     private fun removeBook(context: RoutingContext) {
         val bookId = BookId(context.pathParam("id").toInt())
-        this.bookService.removeBook(bookId)
+        this.bookService.removeBook<Book?>(bookId)
+            .map { it.get(genericHandler()) }
             .onSuccess { sendResponse(context, it) }
             .onFailure { sendFailedResponse(context, it) }
     }

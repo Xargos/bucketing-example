@@ -42,27 +42,27 @@ class BookService(
     private val bookRepository: BookRepository,
     private val bookFactory: BookFactory
 ) {
-    fun getBook(bookId: BookId): Future<Book?> {
+    fun <HANDLER_RESULT> getBook(bookId: BookId): Future<OperationResult<Book?, HANDLER_RESULT>> {
         return this.execQuery(GetBook(bookId))
     }
 
-    fun getAllBooks(): Future<Collection<Book>> {
+    fun <HANDLER_RESULT> getAllBooks(): Future<OperationResult<Collection<Book>, HANDLER_RESULT>> {
         return this.execQuery(GetAllBooks)
     }
 
-    fun addBook(newBook: NewBook): Future<BookId> {
+    fun <HANDLER_RESULT> addBook(newBook: NewBook): Future<OperationResult<BookId, HANDLER_RESULT>> {
         return this.execCommand(AddBook(newBook, bookFactory))
     }
 
-    fun removeBook(bookId: BookId): Future<Book?> {
+    fun <HANDLER_RESULT> removeBook(bookId: BookId): Future<OperationResult<Book?, HANDLER_RESULT>> {
         return this.execCommand(RemoveBook(bookId))
     }
 
-    private fun <RESULT> execCommand(operation: Command<BookId, Book, BookRepository, RESULT>): Future<RESULT> {
+    private fun <RESULT, HANDLER_RESULT> execCommand(operation: Command<BookId, Book, BookRepository, RESULT>): Future<OperationResult<RESULT, HANDLER_RESULT>> {
         return commandExecutor.exec(this.bookRepository, operation)
     }
 
-    private fun <RESULT> execQuery(operation: Query<BookId, Book, BookRepository, RESULT>): Future<RESULT> {
+    private fun <RESULT, HANDLER_RESULT> execQuery(operation: Query<BookId, Book, BookRepository, RESULT>): Future<OperationResult<RESULT, HANDLER_RESULT>> {
         return commandExecutor.exec(this.bookRepository, operation)
     }
 }
